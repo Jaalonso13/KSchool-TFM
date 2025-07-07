@@ -1,0 +1,4 @@
+pandas==2.3.0
+python-dotenv==1.1.1
+tqdm==4.67.1
+requests==2.32.4
