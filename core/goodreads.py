@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import requests
+import gzip
+import json
 import pandas as pd
 from tqdm import tqdm
 
@@ -14,7 +16,7 @@ class GoodReadsData:
                  data_path: str = DATA_PATH,
                  donwload_workers: int = 4):
         
-        self._file_names = pd.read_csv(names_file).set_index("name")
+        self._file_names: pd.DataFrame = pd.read_csv(names_file).set_index("name")
         self._data_path = os.path.join(data_path, "goodreads")
         self._download_workers = donwload_workers
         
@@ -33,7 +35,8 @@ class GoodReadsData:
         return self._file_names.loc[filename, "type"] == "byGenre"
             
     def _get_url(self, filename: str) -> str:
-        return f"{self._url}{"/byGenre" if self._byGenre(filename) else ""}" \
+        _genre = "/byGenre" if self._byGenre(filename) else ""
+        return f"{self._url}{_genre}" \
             + f"/{filename}{self._file_names.loc[filename, "ext"]}"
             
     def get_file_path(self, filename: str) -> str:            
@@ -64,19 +67,58 @@ class GoodReadsData:
             print(f"File {filename} can not be found!")
             raise RuntimeError(err)
         
-    def load_file(self, filename: str) -> pd.DataFrame | None:
+    def load_file(self, filename: str) -> pd.DataFrame:
         file_path = self.get_file_path(filename)
         try:
             if (ext := os.path.splitext(file_path)[-1]) == ".gz":
                 return pd.read_json(file_path, lines=True, compression="gzip")
             elif ext == ".json":
-                return pd.read_json(file_path)
+                return pd.read_json(file_path, lines=True)
             elif ext == ".csv":
                 return pd.read_csv(file_path)
+            
         except Exception as err:
             print(f"File {filename} can not be loaded!")
-        return None
+            raise RuntimeError(err)
+    
+    def load_file_range(self, filename: str, sample_range: tuple[int, int]
+                          ) -> pd.DataFrame:
+        data = []
+        with gzip.open(self.get_file_path(filename), "rt", encoding="utf-8") as fin:
+            for i, l in enumerate(fin):
+                if i < sample_range[0]:
+                    continue
+                elif i > sample_range[1]:
+                    break
+                data.append(json.loads(l))
+        return pd.DataFrame(data)
 
+    def load_file_columns(self, filename: str, columns: list[str]
+                          ) -> pd.DataFrame:
+        data = []
+        with gzip.open(self.get_file_path(filename), "rt", encoding="utf-8") as fin:
+            for l in fin:
+                obj = json.loads(l)
+                data.append({key: obj.get(key, None) for key in columns})
+        return pd.DataFrame(data)
+        
+    def load_file_samples(self, filename: str, key: str, values: list
+                         ) -> pd.DataFrame:
+        data = []
+        with gzip.open(self.get_file_path(filename), "rt", encoding="utf-8") as fin:
+            for l in fin:
+                obj = json.loads(l)
+                if obj.get(key, None) in values:
+                    data.append(obj)
+        return pd.DataFrame(data)
+    
+    
+    def count_samples(self, filename: str) -> int:
+        count = 0
+        with gzip.open(self.get_file_path(filename), 'rt', encoding='utf-8') as f:
+            for _ in f:
+                count += 1
+        return count
 
 class GoodReadsApi:
     
