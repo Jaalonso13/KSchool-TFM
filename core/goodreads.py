@@ -67,53 +67,67 @@ class GoodReadsData:
             print(f"File {filename} can not be found!")
             raise RuntimeError(err)
         
-    def load_file(self, filename: str) -> pd.DataFrame:
-        file_path = self.get_file_path(filename)
-        try:
-            if (ext := os.path.splitext(file_path)[-1]) == ".gz":
-                return pd.read_json(file_path, lines=True, compression="gzip")
-            elif ext == ".json":
-                return pd.read_json(file_path, lines=True)
-            elif ext == ".csv":
-                return pd.read_csv(file_path)
-            
-        except Exception as err:
-            print(f"File {filename} can not be loaded!")
-            raise RuntimeError(err)
-    
-    def load_file_range(self, filename: str, sample_range: tuple[int, int]
-                          ) -> pd.DataFrame:
-        data = []
-        with gzip.open(self.get_file_path(filename), "rt", encoding="utf-8") as fin:
-            for i, l in enumerate(fin):
-                if i < sample_range[0]:
-                    continue
-                elif i > sample_range[1]:
-                    break
-                data.append(json.loads(l))
-        return pd.DataFrame(data)
-
-    def load_file_columns(self, filename: str, columns: list[str]
-                          ) -> pd.DataFrame:
-        data = []
-        # df = pd.read_csv("dataset.csv", usecols=["col1", "col2"])
-        with gzip.open(self.get_file_path(filename), "rt", encoding="utf-8") as fin:
-            for l in fin:
-                obj = json.loads(l)
-                data.append({key: obj.get(key, None) for key in columns})
-        return pd.DataFrame(data)
+    def load_file(self, 
+                  filename: str, 
+                  range: tuple[int, int] = None, 
+                  columns: list[str] = None,
+                  key: str = None,
+                  values: list = None) -> pd.DataFrame:
         
-    def load_file_samples(self, filename: str, key: str, values: list
-                         ) -> pd.DataFrame:
+        filepath = self.get_file_path(filename)
+        if (ext := self._file_names.loc[filename, "ext"]).endswith(".gz"):
+            return self._load_gz(
+                filepath, key, values, range, columns)
+        elif ext.endswith(".csv"):
+            return self._load_csv(
+                filepath, key, values, **self._csv_kwargs(range, columns))
+        else:
+            raise Exception("Unexpected file format!")
+        
+    @staticmethod
+    def _load_gz(filepath: str, key: str = None, values: list = None, 
+                 range: tuple[int, int] = None, columns: list[str] = None) -> pd.DataFrame:
+        
         data = []
-        with gzip.open(self.get_file_path(filename), "rt", encoding="utf-8") as fin:
-            for l in fin:
+        with gzip.open(filepath, "rt", encoding="utf-8") as fin:
+            for i, l in enumerate(fin):
+                if range:
+                    if i < range[0]:
+                        continue
+                    elif i >= range[1]:
+                        break
                 obj = json.loads(l)
-                if obj.get(key, None) in values:
+                if key and values:
+                    if obj.get(key, None) not in values:
+                        continue
+                if columns:
+                    data.append({key: obj.get(key, None) for key in columns})
+                else:
                     data.append(obj)
+                    
         return pd.DataFrame(data)
     
+    @staticmethod
+    def _csv_kwargs(sample_range: tuple[int, int] = None, 
+                    df_columns: list[str] = None) -> dict:
+        kwargs = {}
+        if df_columns:
+            kwargs["usecols"] = df_columns
+        if sample_range:
+            kwargs["skiprows"] = range(1, sample_range[0]),
+            kwargs["nrows"] = sample_range[1] - sample_range[0]
+            
+        return kwargs
     
+    @staticmethod
+    def _load_csv(filepath: str, key: str = None, values: list = None, 
+                 **kwargs) -> pd.DataFrame:
+        
+        df = pd.read_csv(filepath, **kwargs)
+        if key and values:
+            return df[df[key].isin(values)]
+        return df
+
     def count_samples(self, filename: str) -> int:
         count = 0
         with gzip.open(self.get_file_path(filename), 'rt', encoding='utf-8') as f:
