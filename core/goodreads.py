@@ -95,8 +95,10 @@ class GoodReadsData:
 
     def load_file_columns(self, filename: str, columns: list[str]
                           ) -> pd.DataFrame:
+        
+        if self._file_names.loc[filename, "ext"] == ".csv":
+            return pd.read_csv(self.get_file_path(filename), usecols=columns)
         data = []
-        # df = pd.read_csv("dataset.csv", usecols=["col1", "col2"])
         with gzip.open(self.get_file_path(filename), "rt", encoding="utf-8") as fin:
             for l in fin:
                 obj = json.loads(l)
