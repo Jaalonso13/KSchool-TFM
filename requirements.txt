@@ -8,4 +8,3 @@ shapely==2.1.1
 
 ultralytics==8.3.166
 tensorboard==2.19.0
-albumentations==2.0.8
